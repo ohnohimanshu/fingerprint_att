@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin Login — Attendance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#0d0f14;--card:#161b24;--border:#252d3d;--accent:#3b82f6;--text:#e2e8f0;--muted:#64748b;--font:'Space Grotesk',sans-serif;--danger:#ef4444;--success:#10b981}
+    body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .login-box{width:100%;max-width:420px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:2.5rem}
+    h1{font-size:1.6rem;font-weight:700;margin-bottom:.25rem}
+    h1 span{color:var(--accent)}
+    .sub{color:var(--muted);font-size:.875rem;margin-bottom:2rem}
+    .form-group{margin-bottom:1.2rem}
+    label{display:block;margin-bottom:.4rem;font-size:.875rem;color:var(--muted);font-weight:500}
+    input{width:100%;padding:.65rem 1rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:.9rem;transition:border-color .2s}
+    input:focus{outline:none;border-color:var(--accent)}
+    .btn{width:100%;padding:.75rem;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s}
+    .btn:hover{background:#2563eb}
+    .alert{padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.875rem}
+    .alert-error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#fca5a5}
+    .logo{width:48px;height:48px;background:linear-gradient(135deg,var(--accent),#06b6d4);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin-bottom:1.5rem}
+    .student-link{text-align:center;margin-top:1.5rem;font-size:.875rem;color:var(--muted)}
+    .student-link a{color:var(--accent);text-decoration:none}
+  </style>
+</head>
+<body>
+<div class="login-box">
+  <div class="logo">🔐</div>
+  <h1>Admin <span>Portal</span></h1>
+  <p class="sub">Fingerprint Attendance System</p>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{cat}}">{{msg}}</div>
+    {% endfor %}
+  {% endwith %}
+  <form method="POST">
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" name="username" required autofocus placeholder="admin">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" name="password" required placeholder="••••••••">
+    </div>
+    <button class="btn" type="submit">Sign In</button>
+  </form>
+  <div class="student-link">Student? <a href="/">Sign in here</a></div>
+</div>
+</body>
+</html>

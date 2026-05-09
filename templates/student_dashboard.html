@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>My Attendance — {{student.name}}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#0d0f14;--card:#161b24;--border:#252d3d;--accent:#06b6d4;--text:#e2e8f0;--muted:#64748b;--font:'Space Grotesk',sans-serif;--success:#10b981;--danger:#ef4444}
+    body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
+    nav{background:var(--card);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:60px}
+    .brand{font-size:1.05rem;font-weight:700}.brand span{color:var(--accent)}
+    .nav-links a{color:var(--muted);text-decoration:none;font-size:.875rem;transition:color .2s}.nav-links a:hover{color:var(--text)}
+    .container{max-width:900px;margin:0 auto;padding:2rem 1.5rem}
+    .profile{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem 2rem;display:flex;align-items:center;gap:1.5rem;margin-bottom:2rem}
+    .avatar{width:56px;height:56px;background:linear-gradient(135deg,var(--accent),#3b82f6);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0}
+    .profile-name{font-size:1.2rem;font-weight:700}
+    .profile-meta{color:var(--muted);font-size:.875rem;margin-top:.25rem}
+    .meta-pill{display:inline-block;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);color:var(--accent);border-radius:20px;padding:.2rem .65rem;font-size:.75rem;font-weight:600;margin-right:.35rem}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2rem}
+    .stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem}
+    .stat-val{font-size:1.8rem;font-weight:700;margin-bottom:.2rem}
+    .stat-lbl{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .section-title{font-size:1rem;font-weight:600;margin-bottom:1rem}
+    .day-group{margin-bottom:1.5rem}
+    .day-header{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:.4rem 0;border-bottom:1px solid var(--border);margin-bottom:.75rem}
+    .record-row{display:flex;align-items:center;gap:1rem;padding:.6rem .75rem;border-radius:8px;transition:background .15s;margin-bottom:.35rem}
+    .record-row:hover{background:rgba(255,255,255,.03)}
+    .badge{display:inline-flex;align-items:center;gap:.3rem;padding:.3rem .7rem;border-radius:20px;font-size:.75rem;font-weight:700;min-width:58px;justify-content:center}
+    .badge-in{background:rgba(16,185,129,.2);color:#6ee7b7}
+    .badge-out{background:rgba(239,68,68,.2);color:#fca5a5}
+    .rec-time{font-size:.8rem;color:var(--muted);min-width:55px}
+    .rec-desc{font-size:.875rem;color:var(--text)}
+    .empty{text-align:center;padding:3rem;color:var(--muted)}
+    @media(max-width:640px){.stats{grid-template-columns:1fr 1fr}.profile{flex-direction:column;text-align:center}}
+  </style>
+</head>
+<body>
+<nav>
+  <span class="brand">Finger<span>Attend</span></span>
+  <div class="nav-links"><a href="/student/logout">Logout</a></div>
+</nav>
+<div class="container">
+  <div class="profile">
+    <div class="avatar">👤</div>
+    <div>
+      <div class="profile-name">{{student.name}}</div>
+      <div class="profile-meta">
+        <span class="meta-pill">{{student.roll_no}}</span>
+        <span class="meta-pill">{{student.course}}</span>
+        <span class="meta-pill">{{student.branch}}</span>
+        <span class="meta-pill">{{student.year}}</span>
+      </div>
+    </div>
+  </div>
+
+  {% set total_days = days | length %}
+  {% set total_in   = student.records | selectattr('action','equalto','IN') | list | length %}
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-val" style="color:var(--accent)">{{total_days}}</div>
+      <div class="stat-lbl">Days Present</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" style="color:var(--success)">{{total_in}}</div>
+      <div class="stat-lbl">Total Check-Ins</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" style="color:{% if student.is_enrolled %}var(--success){% else %}var(--danger){% endif %}">
+        {% if student.is_enrolled %}✓{% else %}✗{% endif %}
+      </div>
+      <div class="stat-lbl">Fingerprint Status</div>
+    </div>
+  </div>
+
+  <div class="section-title">Attendance History</div>
+  {% if days %}
+    {% for date, records in days.items() | sort(reverse=true) %}
+    <div class="day-group">
+      <div class="day-header">{{date}}</div>
+      {% for r in records %}
+      <div class="record-row">
+        <span class="badge badge-{{r.action | lower}}">
+          {% if r.action == 'IN' %}↓ IN{% else %}↑ OUT{% endif %}
+        </span>
+        <span class="rec-time">{{r.timestamp.strftime('%H:%M')}}</span>
+        <span class="rec-desc">
+          {% if r.action == 'IN' %}Entered the lab{% else %}Exited the lab{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">
+      <div style="font-size:2rem;margin-bottom:.5rem">📭</div>
+      No attendance records yet. Visit the lab and scan your fingerprint.
+    </div>
+  {% endif %}
+</div>
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin Dashboard — Attendance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#0d0f14;--card:#161b24;--border:#252d3d;--accent:#3b82f6;--text:#e2e8f0;--muted:#64748b;--font:'Space Grotesk',sans-serif;--mono:'JetBrains Mono',monospace;--success:#10b981;--danger:#ef4444;--warning:#f59e0b}
+    body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
+    nav{background:var(--card);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:60px}
+    .brand{font-size:1.05rem;font-weight:700}.brand span{color:var(--accent)}
+    .nav-links{display:flex;gap:1.5rem;align-items:center}
+    .nav-links a{color:var(--muted);text-decoration:none;font-size:.875rem;transition:color .2s}.nav-links a:hover{color:var(--text)}
+    .container{max-width:1200px;margin:0 auto;padding:2rem 1.5rem}
+    .page-title{font-size:1.5rem;font-weight:700;margin-bottom:1.5rem}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2rem}
+    .stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.25rem 1.5rem}
+    .stat-val{font-size:2.2rem;font-weight:700;margin-bottom:.2rem}
+    .stat-lbl{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+    .card-header{padding:1rem 1.5rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+    .card-header h2{font-size:1rem;font-weight:600}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:.75rem 1.25rem;text-align:left;border-bottom:1px solid var(--border);font-size:.875rem}
+    th{color:var(--muted);font-weight:500;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:rgba(255,255,255,.02)}
+    .btn{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem 1rem;border-radius:7px;border:none;font-family:var(--font);font-size:.8rem;font-weight:500;cursor:pointer;transition:all .2s;text-decoration:none}
+    .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#2563eb}
+    .btn-success{background:var(--success);color:#fff}
+    .btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}.btn-danger:hover{background:var(--danger);color:#fff}
+    .badge{display:inline-block;padding:.2rem .55rem;border-radius:20px;font-size:.72rem;font-weight:600}
+    .badge-enrolled{background:rgba(16,185,129,.2);color:#6ee7b7}
+    .badge-pending{background:rgba(245,158,11,.2);color:#fcd34d}
+    .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+    .modal.active{display:flex}
+    .modal-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:2rem;width:460px;max-width:90vw}
+    .modal-title{font-size:1.1rem;font-weight:700;margin-bottom:.5rem}
+    .modal-sub{color:var(--muted);font-size:.875rem;margin-bottom:1.5rem}
+    .enroll-status{padding:1rem;border-radius:8px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);font-size:.875rem;margin-bottom:1rem;display:none}
+    .flash{padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.875rem;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#6ee7b7}
+    @media(max-width:768px){.stats{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<nav>
+  <span class="brand">Finger<span>Attend</span> &mdash; Admin</span>
+  <div class="nav-links">
+    <a href="/admin/attendance">Attendance Log</a>
+    <a href="/admin/add-student" class="btn btn-primary">+ Add Student</a>
+    <a href="/admin/logout">Logout</a>
+  </div>
+</nav>
+<div class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}<div class="flash">{{msg}}</div>{% endfor %}
+  {% endwith %}
+  <div class="page-title">Dashboard</div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val" style="color:var(--accent)">{{total}}</div><div class="stat-lbl">Total Students</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--success)">{{today_count}}</div><div class="stat-lbl">In Lab Today</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--warning)">{{ students | selectattr('is_enrolled','equalto',false) | list | length }}</div><div class="stat-lbl">Pending Enrollment</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <h2>Students</h2>
+      <a href="/admin/add-student" class="btn btn-primary">+ Add Student</a>
+    </div>
+    <table>
+      <thead><tr><th>Name</th><th>Roll No</th><th>Course / Branch</th><th>Year</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for s in students %}
+        <tr>
+          <td><strong>{{s.name}}</strong></td>
+          <td style="font-family:var(--mono);font-size:.8rem">{{s.roll_no}}</td>
+          <td>{{s.course}} &mdash; {{s.branch}}</td>
+          <td>{{s.year}}</td>
+          <td>
+            {% if s.is_enrolled %}
+              <span class="badge badge-enrolled">✓ Enrolled</span>
+            {% else %}
+              <span class="badge badge-pending">⏳ Pending</span>
+            {% endif %}
+          </td>
+          <td style="display:flex;gap:.5rem;flex-wrap:wrap">
+            {% if not s.is_enrolled %}
+            <button class="btn btn-success" onclick='openEnroll({{s.id}}, {{s.name | tojson | safe}})'>Enroll Finger</button>
+            {% endif %}
+            <button class="btn btn-outline" onclick='openEdit({{ s.to_dict() | tojson | safe }})'>Edit</button>
+            <form method="POST" action="/admin/delete-student/{{s.id}}" onsubmit="return confirm('Delete {{s.name | replace("'", "\\'")}}?')">
+              <button class="btn btn-danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:2rem">No students yet. <a href="/admin/add-student" style="color:var(--accent)">Add one.</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal" id="editModal">
+  <div class="modal-box" style="width:500px">
+    <div class="modal-title">Edit Student Details</div>
+    <div class="modal-sub">Username: <span id="editUsername" style="font-family:var(--mono);color:var(--accent)"></span></div>
+    <form id="editForm" method="POST">
+      <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:1rem;margin-bottom:1rem">
+        <div><label>Name</label><input type="text" name="name" id="editName" required></div>
+        <div><label>Roll No</label><input type="text" name="roll_no" id="editRoll" required></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:1rem;margin-bottom:1rem">
+        <div>
+          <label>Course</label>
+          <select id="editCourseSelect" onchange="toggleEditOtherCourse()">
+            <option value="B.Tech">B.Tech</option><option value="M.Tech">M.Tech</option>
+            <option value="BCA">BCA</option><option value="MCA">MCA</option>
+            <option value="B.Sc">B.Sc</option><option value="M.Sc">M.Sc</option>
+            <option value="OTHER">Other...</option>
+          </select>
+          <input type="text" id="editCourseOther" placeholder="Type course..." style="display:none;margin-top:.4rem">
+          <input type="hidden" name="course" id="editCourseFinal">
+        </div>
+        <div><label>Branch</label><input type="text" name="branch" id="editBranch" required></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:1rem;margin-bottom:1.5rem">
+        <div>
+          <label>Year</label>
+          <select name="year" id="editYear" required>
+            <option>1st Year</option><option>2nd Year</option>
+            <option>3rd Year</option><option>4th Year</option>
+          </select>
+        </div>
+        <div><label>Reset Password</label><input type="text" name="password" placeholder="Leave blank to keep current"></div>
+      </div>
+      <div style="display:flex;gap:.75rem">
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <button type="button" class="btn" style="background:var(--border);color:var(--text)" onclick="closeEditModal()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+<div class="modal" id="enrollModal">
+  <div class="modal-box">
+    <div class="modal-title">Enroll Fingerprint</div>
+    <div class="modal-sub" id="enrollStudentName"></div>
+    <div class="enroll-status" id="enrollStatus"></div>
+    <div id="enrollInstructions" style="color:var(--muted);font-size:.875rem;margin-bottom:1.5rem;line-height:1.6">
+      Click <strong>Start Enrollment</strong>. The sensor will be ready in 3 seconds — then ask the student to place and lift their finger twice.
+    </div>
+    <div style="display:flex;gap:.75rem">
+      <button class="btn btn-success" id="startEnrollBtn" onclick="startEnroll()">Start Enrollment</button>
+      <button class="btn" style="background:var(--border);color:var(--text)" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentStudentId = null;
+function openEnroll(id, name) {
+  currentStudentId = id;
+  document.getElementById('enrollStudentName').textContent = 'Student: ' + name;
+  document.getElementById('enrollStatus').style.display = 'none';
+  document.getElementById('enrollModal').classList.add('active');
+}
+function closeModal() {
+  document.getElementById('enrollModal').classList.remove('active');
+  currentStudentId = null;
+}
+async function startEnroll() {
+  const btn = document.getElementById('startEnrollBtn');
+  btn.disabled = true; btn.textContent = 'Sending command...';
+  const st = document.getElementById('enrollStatus');
+  st.style.display = 'block';
+  st.textContent = 'Sending command to ESP32...';
+
+  const res  = await fetch('/admin/enroll-fingerprint/' + currentStudentId, { method: 'POST' });
+  const data = await res.json();
+
+  if (data.ok) {
+    st.textContent = '✅ ' + data.message + ' Waiting for fingerprint scan...';
+    pollEnrollResult(currentStudentId);
+  } else {
+    st.textContent = '❌ Error: ' + data.error;
+    btn.disabled = false; btn.textContent = 'Retry';
+  }
+}
+function pollEnrollResult(sid) {
+  let tries = 0;
+  const iv = setInterval(async () => {
+    tries++;
+    if (tries > 30) { clearInterval(iv); return; }
+    const r = await fetch('/api/esp32/command');
+    const d = await r.json();
+    if (d.command === null) {
+      // Command was consumed — check if enrolled
+      const res = await fetch('/admin');
+      clearInterval(iv);
+      closeModal();
+      location.reload();
+    }
+  }, 2000);
+}
+document.getElementById('enrollModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+function openEdit(student) {
+  document.getElementById('editForm').action = '/admin/edit-student/' + student.id;
+  document.getElementById('editUsername').textContent = student.username;
+  document.getElementById('editName').value = student.name;
+  document.getElementById('editRoll').value = student.roll_no;
+  document.getElementById('editBranch').value = student.branch;
+  document.getElementById('editYear').value = student.year;
+  
+  const sel = document.getElementById('editCourseSelect');
+  const other = document.getElementById('editCourseOther');
+  const options = Array.from(sel.options).map(o => o.value);
+  
+  if (options.includes(student.course)) {
+    sel.value = student.course;
+    other.style.display = 'none';
+  } else {
+    sel.value = 'OTHER';
+    other.value = student.course;
+    other.style.display = 'block';
+  }
+  
+  document.getElementById('editModal').classList.add('active');
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('active');
+}
+
+function toggleEditOtherCourse() {
+  const sel = document.getElementById('editCourseSelect');
+  const other = document.getElementById('editCourseOther');
+  other.style.display = (sel.value === 'OTHER') ? 'block' : 'none';
+}
+
+document.getElementById('editForm').onsubmit = function() {
+  const sel = document.getElementById('editCourseSelect');
+  const other = document.getElementById('editCourseOther');
+  const final = document.getElementById('editCourseFinal');
+  final.value = (sel.value === 'OTHER') ? other.value : sel.value;
+};
+
+document.getElementById('editModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeEditModal();
+});
+</script>
+</body>
+</html>

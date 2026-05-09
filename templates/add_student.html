@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Add Student — Attendance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#0d0f14;--card:#161b24;--border:#252d3d;--accent:#3b82f6;--text:#e2e8f0;--muted:#64748b;--font:'Space Grotesk',sans-serif;--mono:'JetBrains Mono',monospace;--success:#10b981;--danger:#ef4444}
+    body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
+    nav{background:var(--card);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:60px}
+    .brand{font-size:1.05rem;font-weight:700}.brand span{color:var(--accent)}
+    .nav-links a{color:var(--muted);text-decoration:none;font-size:.875rem}
+    .container{max-width:700px;margin:0 auto;padding:2rem 1.5rem}
+    .back{color:var(--muted);text-decoration:none;font-size:.875rem;display:inline-flex;align-items:center;gap:.35rem;margin-bottom:1.5rem;transition:color .2s}.back:hover{color:var(--text)}
+    h1{font-size:1.5rem;font-weight:700;margin-bottom:.5rem}
+    .sub{color:var(--muted);font-size:.9rem;margin-bottom:2rem}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2rem}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+    .form-group{margin-bottom:1.2rem}
+    label{display:block;margin-bottom:.4rem;font-size:.875rem;color:var(--muted);font-weight:500}
+    input,select{width:100%;padding:.65rem 1rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:.9rem;transition:border-color .2s}
+    input:focus,select:focus{outline:none;border-color:var(--accent)}
+    select option{background:var(--card)}
+    .btn{display:inline-flex;align-items:center;gap:.4rem;padding:.65rem 1.5rem;border-radius:8px;border:none;font-family:var(--font);font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}
+    .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#2563eb}
+    .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
+    .alert{padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.875rem}
+    .alert-error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#fca5a5}
+    .alert-success{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#6ee7b7}
+    .cred-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:1.5rem;margin-top:2rem}
+    .cred-title{font-size:1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+    .cred-row{display:flex;justify-content:space-between;align-items:center;padding:.65rem 0;border-bottom:1px solid var(--border)}
+    .cred-row:last-child{border-bottom:none}
+    .cred-label{color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
+    .cred-value{font-family:var(--mono);font-size:.9rem;background:rgba(59,130,246,.1);padding:.25rem .6rem;border-radius:5px;border:1px solid rgba(59,130,246,.3)}
+    .copy-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:.2rem .5rem;border-radius:4px;transition:color .2s}.copy-btn:hover{color:var(--accent)}
+    .enroll-prompt{margin-top:1.5rem;padding:1rem;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:.875rem;color:#fcd34d;display:flex;align-items:center;gap:.5rem}
+    @media(max-width:640px){.grid-2{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<nav>
+  <span class="brand">Finger<span>Attend</span> &mdash; Admin</span>
+  <div class="nav-links"><a href="/admin/logout">Logout</a></div>
+</nav>
+<div class="container">
+  <a href="/admin" class="back">← Back to Dashboard</a>
+  <h1>Add New Student</h1>
+  <p class="sub">Fill in the student details. Login credentials will be auto-generated.</p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}<div class="alert alert-{{cat}}">{{msg}}</div>{% endfor %}
+  {% endwith %}
+
+  <div class="card">
+    <form method="POST">
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" name="name" required placeholder="e.g. Himanshu Sharma">
+        </div>
+        <div class="form-group">
+          <label>Roll Number</label>
+          <input type="text" name="roll_no" required placeholder="e.g. 2303601">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Email Address <span style="color:var(--muted);font-weight:400">(optional — credentials will be sent automatically)</span></label>
+        <input type="email" name="email" placeholder="e.g. student@college.edu">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Course</label>
+          <select id="course-select" required onchange="toggleOtherCourse()">
+            <option value="">Select Course</option>
+            <option value="B.Tech">B.Tech</option>
+            <option value="M.Tech">M.Tech</option>
+            <option value="BCA">BCA</option>
+            <option value="MCA">MCA</option>
+            <option value="B.Sc">B.Sc</option>
+            <option value="M.Sc">M.Sc</option>
+            <option value="OTHER">Other...</option>
+          </select>
+          <input type="text" id="course-other" placeholder="Type course name..." style="display:none;margin-top:.5rem">
+          <input type="hidden" name="course" id="course-final">
+        </div>
+        <div class="form-group">
+          <label>Branch</label>
+          <input type="text" name="branch" required placeholder="e.g. Computer Science">
+        </div>
+      </div>
+      <div class="form-group" style="max-width:200px">
+        <label>Year</label>
+        <select name="year" required>
+          <option value="">Select year</option>
+          <option>1st Year</option><option>2nd Year</option>
+          <option>3rd Year</option><option>4th Year</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:.5rem">
+        <button type="submit" class="btn btn-primary">Add Student &amp; Generate Credentials</button>
+        <a href="/admin" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+
+    {% if generated %}
+    <div class="cred-box">
+      <div class="cred-title">🎉 Student Added — Share Credentials</div>
+      <div class="cred-row">
+        <span class="cred-label">Name</span>
+        <span class="cred-value">{{generated.student.name}}</span>
+      </div>
+      <div class="cred-row">
+        <span class="cred-label">Roll No</span>
+        <span class="cred-value">{{generated.student.roll_no}}</span>
+      </div>
+      {% if generated.student.email %}
+      <div class="cred-row">
+        <span class="cred-label">Email</span>
+        <span class="cred-value">{{generated.student.email}}</span>
+        {% if generated.email_sent %}
+          <span style="color:var(--success);font-size:.8rem;font-weight:600">✓ Sent</span>
+        {% else %}
+          <span style="color:var(--danger);font-size:.8rem;font-weight:600">✗ Failed</span>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="cred-row">
+        <span class="cred-label">Username</span>
+        <span class="cred-value" id="uname">{{generated.username}}</span>
+        <button class="copy-btn" onclick="copy('uname')">Copy</button>
+      </div>
+      <div class="cred-row">
+        <span class="cred-label">Password</span>
+        <span class="cred-value" id="upass">{{generated.password}}</span>
+        <button class="copy-btn" onclick="copy('upass')">Copy</button>
+      </div>
+      {% if generated.student.email %}
+      <div style="margin-top:1rem">
+        <button class="btn btn-primary" id="resendBtn"
+                onclick="resendEmail({{generated.student.id}})">
+          📧 {% if generated.email_sent %}Resend Email{% else %}Retry Send Email{% endif %}
+        </button>
+        <span id="resendStatus" style="margin-left:.75rem;font-size:.85rem"></span>
+      </div>
+      {% endif %}
+    </div>
+    <div class="enroll-prompt">
+      ⚠️ Fingerprint not yet enrolled. Go to dashboard and click <strong>Enroll Finger</strong> for this student.
+    </div>
+    {% endif %}
+  </div>
+</div>
+<script>
+function copy(id) {
+  navigator.clipboard.writeText(document.getElementById(id).textContent);
+  const btn = event.target;
+  btn.textContent = 'Copied!';
+  btn.style.color = 'var(--success)';
+  setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 1500);
+}
+
+async function resendEmail(studentId) {
+  const btn = document.getElementById('resendBtn');
+  const status = document.getElementById('resendStatus');
+  btn.disabled = true;
+  btn.textContent = '⏳ Sending...';
+  status.textContent = '';
+
+  try {
+    const res  = await fetch('/admin/resend-credentials/' + studentId, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = '✓ Email sent successfully!';
+      status.style.color = 'var(--success)';
+      btn.textContent = '📧 Resend Email';
+    } else {
+      status.textContent = '✗ ' + (data.error || 'Failed to send');
+      status.style.color = 'var(--danger)';
+      btn.textContent = '📧 Retry Send Email';
+    }
+  } catch {
+    status.textContent = '✗ Network error';
+    status.style.color = 'var(--danger)';
+    btn.textContent = '📧 Retry Send Email';
+  }
+  btn.disabled = false;
+}
+
+function toggleOtherCourse() {
+  const sel = document.getElementById('course-select');
+  const other = document.getElementById('course-other');
+  if (sel.value === 'OTHER') {
+    other.style.display = 'block';
+    other.required = true;
+  } else {
+    other.style.display = 'none';
+    other.required = false;
+  }
+}
+
+document.querySelector('form').onsubmit = function() {
+  const sel = document.getElementById('course-select');
+  const other = document.getElementById('course-other');
+  const final = document.getElementById('course-final');
+  if (sel.value === 'OTHER') {
+    final.value = other.value;
+  } else {
+    final.value = sel.value;
+  }
+};
+</script>
+</body>
+</html>
