@@ -351,6 +351,98 @@ def attendance_log():
     return render_template("attendance_log.html", records=records, date_filter=date_filter)
 
 
+@app.route("/admin/export-attendance")
+@admin_required
+def export_attendance():
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from flask import send_file
+
+    date_filter = request.args.get("date", now_ist().strftime("%Y-%m-%d"))
+    records = (AttendanceRecord.query
+               .filter_by(date=date_filter)
+               .order_by(AttendanceRecord.timestamp.asc())
+               .join(Student).all())
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Attendance {date_filter}"
+
+    # ── Styles ──────────────────────────────────────────────────────────────
+    header_fill   = PatternFill("solid", fgColor="1E3A5F")
+    header_font   = Font(bold=True, color="FFFFFF", size=11)
+    in_fill       = PatternFill("solid", fgColor="D1FAE5")   # green tint
+    out_fill      = PatternFill("solid", fgColor="FEE2E2")   # red tint
+    center        = Alignment(horizontal="center", vertical="center")
+    thin          = Side(style="thin", color="CCCCCC")
+    border        = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # ── Title row ────────────────────────────────────────────────────────────
+    ws.merge_cells("A1:E1")
+    title_cell = ws["A1"]
+    title_cell.value     = f"Attendance Report — {date_filter}"
+    title_cell.font      = Font(bold=True, size=13, color="1E3A5F")
+    title_cell.alignment = center
+    ws.row_dimensions[1].height = 28
+
+    # ── Header row ───────────────────────────────────────────────────────────
+    headers = ["Name", "Roll No", "Course / Branch", "Action", "Time"]
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=2, column=col, value=h)
+        cell.font      = header_font
+        cell.fill      = header_fill
+        cell.alignment = center
+        cell.border    = border
+    ws.row_dimensions[2].height = 20
+
+    # ── Data rows ────────────────────────────────────────────────────────────
+    for row_idx, r in enumerate(records, 3):
+        row_fill = in_fill if r.action == "IN" else out_fill
+        values   = [
+            r.student.name,
+            r.student.roll_no,
+            f"{r.student.course} — {r.student.branch}",
+            r.action,
+            r.timestamp.strftime("%H:%M:%S"),
+        ]
+        for col, val in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col, value=val)
+            cell.fill      = row_fill
+            cell.alignment = center
+            cell.border    = border
+        ws.row_dimensions[row_idx].height = 18
+
+    # ── Column widths ────────────────────────────────────────────────────────
+    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["B"].width = 14
+    ws.column_dimensions["C"].width = 28
+    ws.column_dimensions["D"].width = 10
+    ws.column_dimensions["E"].width = 12
+
+    # ── Summary row ──────────────────────────────────────────────────────────
+    total_rows = len(records)
+    summary_row = total_rows + 3
+    ws.cell(row=summary_row, column=1, value="Total Records").font = Font(bold=True)
+    ws.cell(row=summary_row, column=2, value=total_rows)
+    in_count  = sum(1 for r in records if r.action == "IN")
+    out_count = sum(1 for r in records if r.action == "OUT")
+    ws.cell(row=summary_row, column=3, value=f"IN: {in_count}   OUT: {out_count}")
+
+    # ── Stream to browser ────────────────────────────────────────────────────
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"attendance_{date_filter}.xlsx"
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
 @app.route("/admin/resend-credentials/<int:student_id>", methods=["POST"])
 @admin_required
 def resend_credentials(student_id):
