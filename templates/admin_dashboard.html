@@ -34,43 +34,14 @@
     .badge{display:inline-block;padding:.2rem .55rem;border-radius:20px;font-size:.72rem;font-weight:600}
     .badge-enrolled{background:rgba(16,185,129,.2);color:#6ee7b7}
     .badge-pending{background:rgba(245,158,11,.2);color:#fcd34d}
-
-    /*
-     * FIX (AWS auto-close bug):
-     * Old code used display:none / display:flex toggled by .active.
-     * On AWS behind a load balancer or with certain proxy setups, the first
-     * fetch() inside pollEnrolled() can complete synchronously before the
-     * browser finishes the paint cycle, causing the modal to flash open then
-     * immediately close if is_enrolled happened to be true for a different
-     * reason (previous partial enrollment left the flag set).
-     *
-     * Solution: keep display:flex always; control visibility with
-     * visibility+opacity so there is never a layout-triggered repaint race.
-     * The .active class transitions opacity 0→1 smoothly instead of
-     * triggering a synchronous display change.
-     */
-    .modal{
-      position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;
-      display:flex;align-items:center;justify-content:center;
-      visibility:hidden;opacity:0;
-      transition:opacity .2s ease,visibility .2s ease;
-      pointer-events:none;
-    }
+    /* Modal: visibility+opacity avoids display-toggle repaint races on AWS */
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:flex;align-items:center;justify-content:center;visibility:hidden;opacity:0;transition:opacity .2s,visibility .2s;pointer-events:none}
     .modal.active{visibility:visible;opacity:1;pointer-events:auto}
-    .modal-box{
-      background:var(--card);border:1px solid var(--border);border-radius:16px;
-      padding:2rem;width:460px;max-width:90vw;
-      transform:translateY(10px);transition:transform .2s ease;
-    }
+    .modal-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:2rem;width:460px;max-width:90vw;transform:translateY(10px);transition:transform .2s}
     .modal.active .modal-box{transform:translateY(0)}
     .modal-title{font-size:1.1rem;font-weight:700;margin-bottom:.5rem}
     .modal-sub{color:var(--muted);font-size:.875rem;margin-bottom:1.5rem}
-    .enroll-status{
-      padding:1rem;border-radius:8px;
-      background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);
-      font-size:.875rem;margin-bottom:1rem;display:none;
-      transition:background .3s,border-color .3s;
-    }
+    .enroll-status{padding:1rem;border-radius:8px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);font-size:.875rem;margin-bottom:1rem;display:none;transition:background .3s,border-color .3s}
     .flash{padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.875rem;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#6ee7b7}
     label{display:block;margin-bottom:.4rem;font-size:.8rem;color:var(--muted);font-weight:500;margin-top:.75rem}
     input,select{width:100%;padding:.6rem .9rem;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--font);font-size:.875rem;transition:border-color .2s}
@@ -97,18 +68,10 @@
   <div class="page-title">Dashboard</div>
 
   <div class="stats">
+    <div class="stat"><div class="stat-val" style="color:var(--accent)">{{total}}</div><div class="stat-lbl">Total Students</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--success)">{{today_count}}</div><div class="stat-lbl">In Lab Today</div></div>
     <div class="stat">
-      <div class="stat-val" style="color:var(--accent)">{{total}}</div>
-      <div class="stat-lbl">Total Students</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val" style="color:var(--success)">{{today_count}}</div>
-      <div class="stat-lbl">In Lab Today</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val" style="color:var(--warning)">
-        {{ students | selectattr('is_enrolled','equalto',false) | list | length }}
-      </div>
+      <div class="stat-val" style="color:var(--warning)">{{ students | selectattr('is_enrolled','equalto',false) | list | length }}</div>
       <div class="stat-lbl">Pending Enrollment</div>
     </div>
   </div>
@@ -120,10 +83,7 @@
     </div>
     <table>
       <thead>
-        <tr>
-          <th>Name</th><th>Roll No</th><th>Course / Branch</th>
-          <th>Year</th><th>Status</th><th>Actions</th>
-        </tr>
+        <tr><th>Name</th><th>Roll No</th><th>Course / Branch</th><th>Year</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for s in students %}
@@ -140,23 +100,31 @@
             {% endif %}
           </td>
           <td style="display:flex;gap:.5rem;flex-wrap:wrap">
+            {# Enroll button — always visible so re-enrollment is possible #}
             <button class="btn btn-success"
               onclick='openEnroll({{ s.id }}, {{ s.name | tojson }})'>
               {% if s.is_enrolled %}Re-Enroll{% else %}Enroll Finger{% endif %}
             </button>
+
+            {# Edit button — pass individual fields, no to_dict() needed #}
             <button class="btn btn-outline"
-              onclick='openEdit(
-                {{ s.id }},
-                {{ s.name     | tojson }},
-                {{ s.roll_no  | tojson }},
-                {{ s.course   | tojson }},
-                {{ s.branch   | tojson }},
-                {{ s.year     | tojson }},
-                {{ s.username | tojson }},
-                {{ (s.email or "") | tojson }}
-              )'>Edit</button>
-            <form method="POST" action="/admin/delete-student/{{s.id}}"
-                  onsubmit="return confirm('Delete {{ s.name | replace(\"'\",\"\\\\'\")|safe }}?')">
+              onclick='openEdit({{ s.id }}, {{ s.name | tojson }}, {{ s.roll_no | tojson }}, {{ s.course | tojson }}, {{ s.branch | tojson }}, {{ s.year | tojson }}, {{ s.username | tojson }}, {{ (s.email or "") | tojson }})'>
+              Edit
+            </button>
+
+            {#
+              FIX 2 — Jinja2 TemplateSyntaxError: unexpected char '\\'
+              Old code used:  onsubmit="return confirm('Delete {{ s.name | replace("'", "\\'") }}?')"
+              Backslash sequences inside Jinja2 string literals inside HTML attributes
+              are not valid — Jinja2 raises a TemplateSyntaxError at compile time.
+
+              Fix: remove the confirm() from the HTML entirely and call a JS function
+              instead. The JS function receives the name via a data attribute (safe,
+              no escaping issues) and shows the confirm dialog before submitting.
+            #}
+            <form method="POST" action="/admin/delete-student/{{ s.id }}"
+                  data-name="{{ s.name | e }}"
+                  onsubmit="return confirmDelete(this)">
               <button class="btn btn-danger" type="submit">Delete</button>
             </form>
           </td>
@@ -173,26 +141,24 @@
   </div>
 </div>
 
-<!-- ═══════════════════════════════ ENROLL MODAL ═══════════════════════════════ -->
+<!-- ═══════════════════ ENROLL MODAL ═══════════════════ -->
 <div class="modal" id="enrollModal">
   <div class="modal-box">
     <div class="modal-title">Enroll Fingerprint</div>
     <div class="modal-sub" id="enrollStudentName"></div>
     <div class="enroll-status" id="enrollStatus"></div>
-    <div id="enrollInstructions" style="color:var(--muted);font-size:.875rem;margin-bottom:1.5rem;line-height:1.6">
+    <div style="color:var(--muted);font-size:.875rem;margin-bottom:1.5rem;line-height:1.6">
       Click <strong>Start Enrollment</strong>. The sensor will be ready in a moment —
       then ask the student to place and lift their finger <strong>twice</strong>.
     </div>
     <div style="display:flex;gap:.75rem">
-      <button class="btn btn-success" id="startEnrollBtn" onclick="startEnroll()">
-        Start Enrollment
-      </button>
+      <button class="btn btn-success" id="startEnrollBtn" onclick="startEnroll()">Start Enrollment</button>
       <button class="btn btn-outline" onclick="closeEnrollModal()">Cancel</button>
     </div>
   </div>
 </div>
 
-<!-- ════════════════════════════════ EDIT MODAL ════════════════════════════════ -->
+<!-- ═══════════════════ EDIT MODAL ═══════════════════ -->
 <div class="modal" id="editModal">
   <div class="modal-box" style="width:520px">
     <div class="modal-title">Edit Student Details</div>
@@ -201,53 +167,38 @@
     </div>
     <form id="editForm" method="POST" onsubmit="return prepareEditSubmit()">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
-        <div>
-          <label>Full Name</label>
-          <input type="text" name="name" id="editName" required>
-        </div>
-        <div>
-          <label>Roll Number</label>
-          <input type="text" name="roll_no" id="editRoll" required>
-        </div>
+        <div><label>Full Name</label><input type="text" name="name" id="editName" required></div>
+        <div><label>Roll Number</label><input type="text" name="roll_no" id="editRoll" required></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
         <div>
           <label>Email <span style="color:var(--muted);font-weight:400">(optional)</span></label>
           <input type="email" name="email" id="editEmail" placeholder="student@example.com">
         </div>
-        <div>
-          <label>Branch</label>
-          <input type="text" name="branch" id="editBranch" required>
-        </div>
+        <div><label>Branch</label><input type="text" name="branch" id="editBranch" required></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
         <div>
           <label>Course</label>
           <select id="editCourseSelect" onchange="toggleEditOtherCourse()">
-            <option value="B.Tech">B.Tech</option>
-            <option value="M.Tech">M.Tech</option>
-            <option value="BCA">BCA</option>
-            <option value="MCA">MCA</option>
-            <option value="B.Sc">B.Sc</option>
-            <option value="M.Sc">M.Sc</option>
+            <option value="B.Tech">B.Tech</option><option value="M.Tech">M.Tech</option>
+            <option value="BCA">BCA</option><option value="MCA">MCA</option>
+            <option value="B.Sc">B.Sc</option><option value="M.Sc">M.Sc</option>
             <option value="OTHER">Other...</option>
           </select>
-          <input type="text" id="editCourseOther" placeholder="Type course name…"
-                 style="display:none;margin-top:.4rem">
+          <input type="text" id="editCourseOther" placeholder="Type course…" style="display:none;margin-top:.4rem">
           <input type="hidden" name="course" id="editCourseFinal">
         </div>
         <div>
           <label>Year</label>
           <select name="year" id="editYear" required>
-            <option>1st Year</option>
-            <option>2nd Year</option>
-            <option>3rd Year</option>
-            <option>4th Year</option>
+            <option>1st Year</option><option>2nd Year</option>
+            <option>3rd Year</option><option>4th Year</option>
           </select>
         </div>
       </div>
       <div style="margin-bottom:1.5rem">
-        <label>Reset Password <span style="color:var(--muted);font-weight:400">(leave blank to keep current)</span></label>
+        <label>Reset Password <span style="color:var(--muted);font-weight:400">(leave blank to keep)</span></label>
         <input type="text" name="password" placeholder="New password…">
       </div>
       <div style="display:flex;gap:.75rem">
@@ -259,42 +210,22 @@
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════════════════════════
-// ENROLL MODAL LOGIC
-//
-// Root cause of the AWS auto-close bug:
-//
-//   The old pollEnrollResult() polled /api/esp32/command instead of
-//   /api/enrollment-status/<id>. On the first poll it got {command:null}
-//   (the command had already been consumed by the ESP32), interpreted that
-//   as "done", and immediately called closeModal() + location.reload().
-//
-//   Even after switching to /api/enrollment-status/, a subtler race exists:
-//   if a student was previously partially enrolled (is_enrolled=true left in
-//   DB from a prior attempt), the first poll returns true and the modal
-//   closes before the ESP32 does anything.
-//
-// Fix applied:
-//   1. enrollmentStarted flag — polling only acts on is_enrolled=true AFTER
-//      the ENROLL command has been confirmed sent to the ESP32.
-//   2. Double-confirmation — is_enrolled must be true on TWO consecutive
-//      polls (6 seconds apart) before we close. This rules out stale DB state.
-//   3. modal uses visibility+opacity (not display toggle) to prevent any
-//      browser-paint race that could cause a visible flash-open-close.
-//   4. Non-OK HTTP responses (e.g. 302 redirect to login on session expiry)
-//      are caught and skipped rather than crashing the poll loop.
-// ═══════════════════════════════════════════════════════════════════════════
+// ─── Delete confirm (FIX 2) ───────────────────────────────────────────────────
+// Read student name from data-name attribute — no Jinja2 escaping needed.
+function confirmDelete(form) {
+  return confirm('Delete ' + form.getAttribute('data-name') + '?');
+}
 
+// ─── Enroll modal ─────────────────────────────────────────────────────────────
 let currentStudentId   = null;
 let enrollPollInterval = null;
-let enrollmentStarted  = false; // true only after ENROLL command confirmed sent
+let enrollmentStarted  = false;
 
 function openEnroll(id, name) {
   stopPoll();
   currentStudentId  = id;
   enrollmentStarted = false;
 
-  // Reset UI
   const st  = document.getElementById('enrollStatus');
   const btn = document.getElementById('startEnrollBtn');
   st.style.display     = 'none';
@@ -304,7 +235,6 @@ function openEnroll(id, name) {
   st.textContent       = '';
   btn.disabled         = false;
   btn.textContent      = 'Start Enrollment';
-
   document.getElementById('enrollStudentName').textContent = 'Student: ' + name;
   document.getElementById('enrollModal').classList.add('active');
 }
@@ -317,20 +247,14 @@ function closeEnrollModal() {
 }
 
 function stopPoll() {
-  if (enrollPollInterval) {
-    clearInterval(enrollPollInterval);
-    enrollPollInterval = null;
-  }
+  if (enrollPollInterval) { clearInterval(enrollPollInterval); enrollPollInterval = null; }
 }
 
 async function startEnroll() {
   const btn = document.getElementById('startEnrollBtn');
   const st  = document.getElementById('enrollStatus');
-
-  btn.disabled     = true;
-  btn.textContent  = 'Sending…';
-  st.style.display = 'block';
-  st.textContent   = '📡 Sending command to ESP32…';
+  btn.disabled = true; btn.textContent = 'Sending…';
+  st.style.display = 'block'; st.textContent = '📡 Sending command to ESP32…';
 
   let data;
   try {
@@ -338,98 +262,75 @@ async function startEnroll() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     data = await res.json();
   } catch (e) {
-    setStatusError('❌ Network error — is Flask running? (' + e.message + ')');
-    btn.disabled    = false;
-    btn.textContent = 'Retry';
+    setStatusError('❌ Network error: ' + e.message);
+    btn.disabled = false; btn.textContent = 'Retry';
     return;
   }
 
   if (!data.ok) {
-    setStatusError('❌ ' + (data.error || 'Unknown error from server'));
-    btn.disabled    = false;
-    btn.textContent = 'Retry';
+    setStatusError('❌ ' + (data.error || 'Unknown error'));
+    btn.disabled = false; btn.textContent = 'Retry';
     return;
   }
 
-  st.textContent = '✅ ' + data.message + ' — waiting for scan…';
-  btn.textContent = 'Waiting…';
-
-  // Set flag AFTER command confirmed — this is what prevents the auto-close race
-  enrollmentStarted = true;
+  st.textContent    = '✅ ' + data.message + ' — waiting for scan…';
+  btn.textContent   = 'Waiting…';
+  enrollmentStarted = true; // set AFTER command confirmed — prevents auto-close race
   startPoll(currentStudentId);
 }
 
 function startPoll(sid) {
-  let tries          = 0;
-  let confirmedCount = 0; // is_enrolled must be true this many times in a row
-
+  let tries = 0, confirmed = 0;
   enrollPollInterval = setInterval(async () => {
-    // User cancelled
     if (!enrollmentStarted || currentStudentId === null) { stopPoll(); return; }
-
-    tries++;
-    if (tries > 60) { // 60 × 3s = 3 min timeout
+    if (++tries > 60) {
       stopPoll();
-      setStatusError('⏱️ Timed out waiting for ESP32. Check the sensor and try again.');
+      setStatusError('⏱️ Timed out. Check the sensor and try again.');
       enrollmentStarted = false;
       const btn = document.getElementById('startEnrollBtn');
-      btn.disabled    = false;
-      btn.textContent = 'Retry';
+      btn.disabled = false; btn.textContent = 'Retry';
       return;
     }
-
-    let d;
     try {
       const r = await fetch('/api/enrollment-status/' + sid);
-      // Handle session-expiry redirect (Flask returns 302 → HTML page)
-      if (!r.ok || r.redirected) {
-        console.warn('Poll skipped — status', r.status, r.redirected ? '(redirected)' : '');
-        return;
-      }
+      if (!r.ok || r.redirected) return; // session expired or redirect — keep polling
       const text = await r.text();
-      try { d = JSON.parse(text); }
-      catch { console.warn('Non-JSON poll response, skipping'); return; }
-    } catch (e) {
-      console.warn('Poll fetch error (will retry):', e.message);
-      return;
-    }
+      let d;
+      try { d = JSON.parse(text); } catch { return; } // non-JSON — keep polling
 
-    const st = document.getElementById('enrollStatus');
-    if (d.is_enrolled === true) {
-      confirmedCount++;
-      st.textContent = `✅ Enrolled! Confirming… (${confirmedCount}/2)`;
-      if (confirmedCount >= 2) {
-        // Two consecutive confirmations — definitely done
-        stopPoll();
-        st.style.background  = 'rgba(16,185,129,.1)';
-        st.style.borderColor = 'rgba(16,185,129,.3)';
-        st.textContent = '✅ Fingerprint enrolled successfully!';
-        setTimeout(() => { closeEnrollModal(); location.reload(); }, 1200);
+      const st = document.getElementById('enrollStatus');
+      if (d.is_enrolled === true) {
+        if (++confirmed >= 2) { // two consecutive confirmations before closing
+          stopPoll();
+          st.style.background  = 'rgba(16,185,129,.1)';
+          st.style.borderColor = 'rgba(16,185,129,.3)';
+          st.textContent = '✅ Fingerprint enrolled successfully!';
+          setTimeout(() => { closeEnrollModal(); location.reload(); }, 1200);
+        } else {
+          st.textContent = `✅ Enrolled! Confirming… (${confirmed}/2)`;
+        }
+      } else {
+        confirmed = 0;
+        st.textContent = `⏳ Waiting for fingerprint scan… (${tries}/60)`;
       }
-    } else {
-      confirmedCount = 0;
-      st.textContent = `⏳ Waiting for fingerprint scan… (${tries}/60)`;
-    }
+    } catch (e) { /* network hiccup — keep polling */ }
   }, 3000);
 }
 
 function setStatusError(msg) {
   const st = document.getElementById('enrollStatus');
-  st.style.display     = 'block';
+  st.style.display = 'block';
   st.style.background  = 'rgba(239,68,68,.1)';
   st.style.borderColor = 'rgba(239,68,68,.3)';
-  st.style.color       = '#fca5a5';
-  st.textContent       = msg;
+  st.style.color = '#fca5a5';
+  st.textContent = msg;
 }
 
 document.getElementById('enrollModal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeEnrollModal();
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// EDIT MODAL LOGIC
-// ═══════════════════════════════════════════════════════════════════════════
-
+// ─── Edit modal ───────────────────────────────────────────────────────────────
 function openEdit(id, name, rollNo, course, branch, year, username, email) {
   document.getElementById('editForm').action  = '/admin/edit-student/' + id;
   document.getElementById('editUsername').textContent = username;
@@ -442,16 +343,11 @@ function openEdit(id, name, rollNo, course, branch, year, username, email) {
   const sel   = document.getElementById('editCourseSelect');
   const other = document.getElementById('editCourseOther');
   const known = Array.from(sel.options).map(o => o.value).filter(v => v !== 'OTHER');
-
   if (known.includes(course)) {
-    sel.value           = course;
-    other.style.display = 'none';
+    sel.value = course; other.style.display = 'none';
   } else {
-    sel.value           = 'OTHER';
-    other.value         = course;
-    other.style.display = 'block';
+    sel.value = 'OTHER'; other.value = course; other.style.display = 'block';
   }
-
   document.getElementById('editModal').classList.add('active');
 }
 
@@ -461,17 +357,14 @@ function closeEditModal() {
 
 function toggleEditOtherCourse() {
   const sel = document.getElementById('editCourseSelect');
-  document.getElementById('editCourseOther').style.display =
-    sel.value === 'OTHER' ? 'block' : 'none';
+  document.getElementById('editCourseOther').style.display = sel.value === 'OTHER' ? 'block' : 'none';
 }
 
 function prepareEditSubmit() {
   const sel = document.getElementById('editCourseSelect');
   document.getElementById('editCourseFinal').value =
-    sel.value === 'OTHER'
-      ? document.getElementById('editCourseOther').value.trim()
-      : sel.value;
-  return true; // allow native form POST
+    sel.value === 'OTHER' ? document.getElementById('editCourseOther').value.trim() : sel.value;
+  return true;
 }
 
 document.getElementById('editModal').addEventListener('click', e => {

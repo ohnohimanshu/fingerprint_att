@@ -3,16 +3,17 @@ Flask Attendance System — app.py
 Manages students, fingerprint enrollment, attendance marking, and student login portal.
 """
 
-import os, random, string, threading, time, smtplib
+import os, random, string, threading, smtplib
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
-load_dotenv()  # loads variables from .env into os.environ
+load_dotenv()
+
 from flask import (Flask, render_template, request, redirect, url_for,
-                   flash, session, jsonify)
+                   flash, session, jsonify, send_file)
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
@@ -20,19 +21,17 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production-xyz987")
 
-# ─── Timezone Configuration ────────────────────────────────────────────────────
+# ─── Timezone ─────────────────────────────────────────────────────────────────
 IST = ZoneInfo("Asia/Kolkata")
 
 def now_ist():
-    """Return current time in Indian Standard Time (Asia/Kolkata)."""
     return datetime.now(IST)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(BASE_DIR, 'attendance.db')}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# ─── SMTP Configuration ───────────────────────────────────────────────────────
-# Set these via environment variables or edit the defaults below.
+# ─── SMTP ─────────────────────────────────────────────────────────────────────
 SMTP_HOST     = os.environ.get("SMTP_HOST",     "smtp.gmail.com")
 SMTP_PORT     = int(os.environ.get("SMTP_PORT", 587))
 SMTP_USER     = os.environ.get("SMTP_USER",     "sensordatadashboard@gmail.com")
@@ -41,7 +40,7 @@ SMTP_FROM     = os.environ.get("SMTP_FROM",     SMTP_USER)
 
 db = SQLAlchemy(app)
 
-# ─── Shared state for ESP32 command queue ─────────────────────────────────────
+# ─── ESP32 command queue ───────────────────────────────────────────────────────
 esp32_command = {"command": None, "fingerprint_id": None}
 esp32_lock    = threading.Lock()
 
@@ -58,11 +57,11 @@ class Student(db.Model):
     course         = db.Column(db.String(80), nullable=False)
     branch         = db.Column(db.String(80), nullable=False)
     year           = db.Column(db.String(10), nullable=False)
-    fingerprint_id = db.Column(db.Integer, unique=True, nullable=True)  # R307 slot
+    fingerprint_id = db.Column(db.Integer, unique=True, nullable=True)
     username       = db.Column(db.String(60), unique=True, nullable=False)
     password_hash  = db.Column(db.String(256), nullable=False)
     enrolled_at    = db.Column(db.DateTime, default=now_ist)
-    is_enrolled    = db.Column(db.Boolean, default=False)  # fingerprint enrolled?
+    is_enrolled    = db.Column(db.Boolean, default=False)
     records        = db.relationship("AttendanceRecord", backref="student", lazy=True)
 
     def set_password(self, raw):
@@ -73,25 +72,24 @@ class Student(db.Model):
 
     def to_dict(self):
         return {
-            "id":             self.id,
-            "name":           self.name,
-            "roll_no":        self.roll_no,
-            "email":          self.email or "",
-            "course":         self.course,
-            "branch":         self.branch,
-            "year":           self.year,
-            "fingerprint_id": self.fingerprint_id,
-            "username":       self.username,
-            "is_enrolled":    self.is_enrolled,
+            "id":          self.id,
+            "name":        self.name,
+            "roll_no":     self.roll_no,
+            "email":       self.email or "",
+            "course":      self.course,
+            "branch":      self.branch,
+            "year":        self.year,
+            "username":    self.username,
+            "is_enrolled": self.is_enrolled,
         }
 
 
 class AttendanceRecord(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey("student.id"), nullable=False)
-    action     = db.Column(db.String(3), nullable=False)  # "IN" or "OUT"
+    action     = db.Column(db.String(3), nullable=False)
     timestamp  = db.Column(db.DateTime, default=now_ist)
-    date       = db.Column(db.String(10))  # YYYY-MM-DD for quick filtering
+    date       = db.Column(db.String(10))
 
 
 class Admin(db.Model):
@@ -104,6 +102,28 @@ class Admin(db.Model):
 
     def check_password(self, raw):
         return check_password_hash(self.password_hash, raw)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FIX 1 — DB init at module level so Gunicorn creates tables on import.
+# The old code put create_defaults() inside `if __name__ == "__main__"` which
+# means Gunicorn (which imports the module, never runs it as __main__) never
+# called db.create_all(), so no tables were ever created and every request
+# crashed with "no such table: student".
+# ═══════════════════════════════════════════════════════════════════════════════
+def create_defaults():
+    db.create_all()
+    if not Admin.query.filter_by(username="admin").first():
+        a = Admin(username="admin")
+        a.set_password("admin123")
+        db.session.add(a)
+        db.session.commit()
+        print("Default admin created — user: admin, pass: admin123")
+
+# Run inside an app context so this works whether imported by Gunicorn or
+# executed directly with `python app.py`.
+with app.app_context():
+    create_defaults()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -133,9 +153,8 @@ def student_required(f):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def generate_credentials(name: str, roll_no: str):
-    """Return (username, raw_password)."""
-    base = name.lower().replace(" ", ".") + "." + roll_no.lower()
-    suffix = "".join(random.choices(string.digits, k=3))
+    base     = name.lower().replace(" ", ".") + "." + roll_no.lower()
+    suffix   = "".join(random.choices(string.digits, k=3))
     username = base + suffix
     password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
     return username, password
@@ -143,13 +162,13 @@ def generate_credentials(name: str, roll_no: str):
 
 def next_fingerprint_slot() -> int:
     used = {s.fingerprint_id for s in Student.query.filter(Student.fingerprint_id.isnot(None)).all()}
-    for slot in range(1, 128):  # R307 supports up to 127 templates
+    for slot in range(1, 128):
         if slot not in used:
             return slot
     raise RuntimeError("Fingerprint sensor is full (127 max)")
 
 
-def get_last_action(student_id: int) -> str:
+def get_last_action(student_id: int):
     rec = (AttendanceRecord.query
            .filter_by(student_id=student_id)
            .order_by(AttendanceRecord.timestamp.desc())
@@ -157,8 +176,7 @@ def get_last_action(student_id: int) -> str:
     return rec.action if rec else None
 
 
-def send_credentials_email(to_email: str, student_name: str, username: str, password: str) -> bool:
-    """Send login credentials to the student's email. Returns True on success."""
+def send_credentials_email(to_email, student_name, username, password):
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "Your Attendance Portal Login Credentials"
@@ -190,7 +208,7 @@ def send_credentials_email(to_email: str, student_name: str, username: str, pass
               </div>
             </div>
             <p style="color:#64748b;font-size:13px;margin:0">
-              ⚠️ Please keep these credentials safe. Your fingerprint enrollment will be done separately by the admin.
+              ⚠️ Please keep these credentials safe.
             </p>
           </div>
           <div style="padding:16px 36px;border-top:1px solid #252d3d;text-align:center">
@@ -199,19 +217,12 @@ def send_credentials_email(to_email: str, student_name: str, username: str, pass
         </div>
         </body></html>
         """
-
-        plain = (f"Hi {student_name},\n\n"
-                 f"Your attendance portal credentials:\n\n"
-                 f"Username : {username}\n"
-                 f"Password : {password}\n\n"
-                 f"Keep these safe.\n\n— FingerAttend")
-
+        plain = (f"Hi {student_name},\n\nUsername: {username}\nPassword: {password}\n\n— FingerAttend")
         msg.attach(MIMEText(plain, "plain"))
         msg.attach(MIMEText(html,  "html"))
 
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.ehlo()
-            server.starttls()
+            server.ehlo(); server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_FROM, to_email, msg.as_string())
         return True
@@ -221,7 +232,7 @@ def send_credentials_email(to_email: str, student_name: str, username: str, pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Admin Views
+# Admin views
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -230,7 +241,7 @@ def admin_login():
         admin = Admin.query.filter_by(username=request.form["username"]).first()
         if admin and admin.check_password(request.form["password"]):
             session["admin_logged_in"] = True
-            session["admin_name"] = admin.username
+            session["admin_name"]      = admin.username
             return redirect(url_for("admin_dashboard"))
         flash("Invalid credentials", "error")
     return render_template("admin_login.html")
@@ -245,8 +256,8 @@ def admin_logout():
 @app.route("/admin")
 @admin_required
 def admin_dashboard():
-    students = Student.query.order_by(Student.enrolled_at.desc()).all()
-    today    = now_ist().strftime("%Y-%m-%d")
+    students    = Student.query.order_by(Student.enrolled_at.desc()).all()
+    today       = now_ist().strftime("%Y-%m-%d")
     today_count = AttendanceRecord.query.filter_by(date=today, action="IN").count()
     return render_template("admin_dashboard.html",
                            students=students,
@@ -281,24 +292,17 @@ def add_student():
         if email:
             email_sent = send_credentials_email(email, name, username, raw_password)
 
-        generated = {
-            "username":   username,
-            "password":   raw_password,
-            "student":    student,
-            "email_sent": email_sent,
-        }
+        generated = {"username": username, "password": raw_password,
+                     "student": student, "email_sent": email_sent}
         flash("Student added! Share credentials below.", "success")
     return render_template("add_student.html", generated=generated)
 
 
-# ─── FIX: Edit student route (was referenced in dashboard JS but never existed) ──
 @app.route("/admin/edit-student/<int:student_id>", methods=["POST"])
 @admin_required
 def edit_student(student_id):
-    student = Student.query.get_or_404(student_id)
-
+    student  = Student.query.get_or_404(student_id)
     new_roll = request.form["roll_no"].strip()
-    # Make sure the new roll number isn't already taken by a *different* student
     existing = Student.query.filter_by(roll_no=new_roll).first()
     if existing and existing.id != student_id:
         flash("Roll number already in use by another student.", "error")
@@ -306,11 +310,11 @@ def edit_student(student_id):
 
     student.name    = request.form["name"].strip()
     student.roll_no = new_roll
+    student.email   = request.form.get("email", "").strip() or None
     student.course  = request.form["course"].strip()
     student.branch  = request.form["branch"].strip()
     student.year    = request.form["year"].strip()
 
-    # Optional password reset — only update if field is non-empty
     new_password = request.form.get("password", "").strip()
     if new_password:
         student.set_password(new_password)
@@ -337,7 +341,22 @@ def enroll_fingerprint(student_id):
         esp32_command["fingerprint_id"] = fp_slot
 
     return jsonify({"ok": True, "slot": fp_slot,
-                    "message": f"Ask student to place finger on sensor. Slot {fp_slot} reserved."})
+                    "message": f"Slot {fp_slot} reserved. Ask student to place finger."})
+
+
+@app.route("/admin/resend-credentials/<int:student_id>", methods=["POST"])
+@admin_required
+def resend_credentials(student_id):
+    student = Student.query.get_or_404(student_id)
+    if not student.email:
+        return jsonify({"ok": False, "error": "No email on file for this student."}), 400
+    new_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+    student.set_password(new_password)
+    db.session.commit()
+    ok = send_credentials_email(student.email, student.name, student.username, new_password)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "SMTP error — check server logs."}), 500
 
 
 @app.route("/admin/attendance")
@@ -357,7 +376,6 @@ def export_attendance():
     import io
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from flask import send_file
 
     date_filter = request.args.get("date", now_ist().strftime("%Y-%m-%d"))
     records = (AttendanceRecord.query
@@ -369,94 +387,54 @@ def export_attendance():
     ws = wb.active
     ws.title = f"Attendance {date_filter}"
 
-    # ── Styles ──────────────────────────────────────────────────────────────
-    header_fill   = PatternFill("solid", fgColor="1E3A5F")
-    header_font   = Font(bold=True, color="FFFFFF", size=11)
-    in_fill       = PatternFill("solid", fgColor="D1FAE5")   # green tint
-    out_fill      = PatternFill("solid", fgColor="FEE2E2")   # red tint
-    center        = Alignment(horizontal="center", vertical="center")
-    thin          = Side(style="thin", color="CCCCCC")
-    border        = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill("solid", fgColor="1E3A5F")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    in_fill     = PatternFill("solid", fgColor="D1FAE5")
+    out_fill    = PatternFill("solid", fgColor="FEE2E2")
+    center      = Alignment(horizontal="center", vertical="center")
+    thin        = Side(style="thin", color="CCCCCC")
+    border      = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    # ── Title row ────────────────────────────────────────────────────────────
     ws.merge_cells("A1:E1")
-    title_cell = ws["A1"]
-    title_cell.value     = f"Attendance Report — {date_filter}"
-    title_cell.font      = Font(bold=True, size=13, color="1E3A5F")
-    title_cell.alignment = center
+    tc = ws["A1"]
+    tc.value     = f"Attendance Report — {date_filter}"
+    tc.font      = Font(bold=True, size=13, color="1E3A5F")
+    tc.alignment = center
     ws.row_dimensions[1].height = 28
 
-    # ── Header row ───────────────────────────────────────────────────────────
-    headers = ["Name", "Roll No", "Course / Branch", "Action", "Time"]
-    for col, h in enumerate(headers, 1):
+    for col, h in enumerate(["Name", "Roll No", "Course / Branch", "Action", "Time"], 1):
         cell = ws.cell(row=2, column=col, value=h)
-        cell.font      = header_font
-        cell.fill      = header_fill
-        cell.alignment = center
-        cell.border    = border
+        cell.font = header_font; cell.fill = header_fill
+        cell.alignment = center; cell.border = border
     ws.row_dimensions[2].height = 20
 
-    # ── Data rows ────────────────────────────────────────────────────────────
-    for row_idx, r in enumerate(records, 3):
-        row_fill = in_fill if r.action == "IN" else out_fill
-        values   = [
-            r.student.name,
-            r.student.roll_no,
+    for ri, r in enumerate(records, 3):
+        fill = in_fill if r.action == "IN" else out_fill
+        for ci, val in enumerate([
+            r.student.name, r.student.roll_no,
             f"{r.student.course} — {r.student.branch}",
-            r.action,
-            r.timestamp.strftime("%H:%M:%S"),
-        ]
-        for col, val in enumerate(values, 1):
-            cell = ws.cell(row=row_idx, column=col, value=val)
-            cell.fill      = row_fill
-            cell.alignment = center
-            cell.border    = border
-        ws.row_dimensions[row_idx].height = 18
+            r.action, r.timestamp.strftime("%H:%M:%S")
+        ], 1):
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.fill = fill; cell.alignment = center; cell.border = border
+        ws.row_dimensions[ri].height = 18
 
-    # ── Column widths ────────────────────────────────────────────────────────
-    ws.column_dimensions["A"].width = 24
-    ws.column_dimensions["B"].width = 14
-    ws.column_dimensions["C"].width = 28
-    ws.column_dimensions["D"].width = 10
-    ws.column_dimensions["E"].width = 12
+    for col, w in zip("ABCDE", [24, 14, 28, 10, 12]):
+        ws.column_dimensions[col].width = w
 
-    # ── Summary row ──────────────────────────────────────────────────────────
-    total_rows = len(records)
-    summary_row = total_rows + 3
-    ws.cell(row=summary_row, column=1, value="Total Records").font = Font(bold=True)
-    ws.cell(row=summary_row, column=2, value=total_rows)
-    in_count  = sum(1 for r in records if r.action == "IN")
-    out_count = sum(1 for r in records if r.action == "OUT")
-    ws.cell(row=summary_row, column=3, value=f"IN: {in_count}   OUT: {out_count}")
+    sr = len(records) + 3
+    ws.cell(row=sr, column=1, value="Total Records").font = Font(bold=True)
+    ws.cell(row=sr, column=2, value=len(records))
+    ws.cell(row=sr, column=3,
+            value=f"IN: {sum(1 for r in records if r.action=='IN')}   "
+                  f"OUT: {sum(1 for r in records if r.action=='OUT')}")
 
-    # ── Stream to browser ────────────────────────────────────────────────────
     buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-
-    filename = f"attendance_{date_filter}.xlsx"
-    return send_file(
-        buf,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=filename,
-    )
-
-
-@app.route("/admin/resend-credentials/<int:student_id>", methods=["POST"])
-@admin_required
-def resend_credentials(student_id):
-    student = Student.query.get_or_404(student_id)
-    if not student.email:
-        return jsonify({"ok": False, "error": "No email address on file for this student."}), 400
-    # Generate a new password and update it
-    new_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
-    student.set_password(new_password)
-    db.session.commit()
-    ok = send_credentials_email(student.email, student.name, student.username, new_password)
-    if ok:
-        return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "SMTP error — check server logs and SMTP config."}), 500
+    wb.save(buf); buf.seek(0)
+    return send_file(buf,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True,
+                     download_name=f"attendance_{date_filter}.xlsx")
 
 
 @app.route("/admin/delete-student/<int:student_id>", methods=["POST"])
@@ -471,7 +449,7 @@ def delete_student(student_id):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Student Portal
+# Student portal
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/", methods=["GET", "POST"])
@@ -500,7 +478,6 @@ def student_dashboard():
                .filter_by(student_id=student.id)
                .order_by(AttendanceRecord.timestamp.desc())
                .limit(50).all())
-    # Group by date
     days = {}
     for r in records:
         days.setdefault(r.date, []).append(r)
@@ -508,7 +485,7 @@ def student_dashboard():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ESP32 API Endpoints
+# ESP32 API
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/mark-attendance", methods=["POST"])
@@ -521,27 +498,17 @@ def api_mark_attendance():
     if not student:
         return jsonify({"error": "not_found"}), 404
 
-    last = get_last_action(student.id)
-    action = "OUT" if last == "IN" else "IN"
-
-    now = now_ist()
-    record = AttendanceRecord(
-        student_id = student.id,
-        action     = action,
-        timestamp  = now,
-        date       = now.strftime("%Y-%m-%d")
-    )
-    db.session.add(record)
+    action = "OUT" if get_last_action(student.id) == "IN" else "IN"
+    now    = now_ist()
+    db.session.add(AttendanceRecord(
+        student_id=student.id, action=action,
+        timestamp=now, date=now.strftime("%Y-%m-%d")
+    ))
     db.session.commit()
 
-    return jsonify({
-        "ok":        True,
-        "name":      student.name,
-        "roll_no":   student.roll_no,
-        "action":    action,
-        "time":      now.strftime("%H:%M"),
-        "confidence": confidence
-    })
+    return jsonify({"ok": True, "name": student.name, "roll_no": student.roll_no,
+                    "action": action, "time": now.strftime("%H:%M"),
+                    "confidence": confidence})
 
 
 @app.route("/api/esp32/command", methods=["GET"])
@@ -568,13 +535,9 @@ def api_enroll_result():
         if not success:
             student.fingerprint_id = None
         db.session.commit()
-
     return jsonify({"ok": True})
 
 
-# ─── FIX: Enrollment status polling endpoint (dashboard JS was polling         ──
-#          /api/esp32/command which cleared the command queue but never          ──
-#          confirmed the DB update; this endpoint checks is_enrolled directly)   ──
 @app.route("/api/enrollment-status/<int:student_id>", methods=["GET"])
 @admin_required
 def api_enrollment_status(student_id):
@@ -583,20 +546,7 @@ def api_enrollment_status(student_id):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DB Init + Default Admin
+# Dev server entry point (Gunicorn does NOT use this block)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-def create_defaults():
-    db.create_all()
-    if not Admin.query.filter_by(username="admin").first():
-        a = Admin(username="admin")
-        a.set_password("admin123")
-        db.session.add(a)
-        db.session.commit()
-        print("Default admin created — user: admin, pass: admin123")
-
-
 if __name__ == "__main__":
-    with app.app_context():
-        create_defaults()
     app.run(host="0.0.0.0", port=5000, debug=True)
