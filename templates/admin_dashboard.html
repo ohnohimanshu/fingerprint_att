@@ -189,19 +189,31 @@ async function startEnroll() {
 }
 function pollEnrollResult(sid) {
   let tries = 0;
+  const st = document.getElementById('enrollStatus');
   const iv = setInterval(async () => {
     tries++;
-    if (tries > 30) { clearInterval(iv); return; }
-    const r = await fetch('/api/esp32/command');
-    const d = await r.json();
-    if (d.command === null) {
-      // Command was consumed — check if enrolled
-      const res = await fetch('/admin');
+    // Give up after 60 tries × 3s = 3 minutes
+    if (tries > 60) {
       clearInterval(iv);
-      closeModal();
-      location.reload();
+      st.textContent = '⏱️ Timed out waiting for ESP32. Check the sensor and try again.';
+      st.style.background = 'rgba(239,68,68,.1)';
+      st.style.borderColor = 'rgba(239,68,68,.3)';
+      document.getElementById('startEnrollBtn').disabled = false;
+      document.getElementById('startEnrollBtn').textContent = 'Retry';
+      return;
     }
-  }, 2000);
+    try {
+      const r = await fetch('/api/enrollment-status/' + sid);
+      const d = await r.json();
+      if (d.is_enrolled === true) {
+        clearInterval(iv);
+        st.textContent = '✅ Fingerprint enrolled successfully!';
+        st.style.background = 'rgba(16,185,129,.1)';
+        st.style.borderColor = 'rgba(16,185,129,.3)';
+        setTimeout(() => { closeModal(); location.reload(); }, 1500);
+      }
+    } catch (_) { /* network hiccup — keep polling */ }
+  }, 3000);
 }
 document.getElementById('enrollModal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
