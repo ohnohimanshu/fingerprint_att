@@ -11,7 +11,7 @@ const char* WIFI_SSID     = "Himanshu";
 const char* WIFI_PASSWORD = "himanshu";
 
 // ─── Flask Server URL ─────────────────────────────────────────────────────────
-const char* SERVER_URL = "http://10.17.5.13:5000";  // Change to your Flask server IP
+const char* SERVER_URL = "http://13.60.236.250";  // Change to your Flask server IP
 
 // ─── Pin Definitions ─────────────────────────────────────────────────────────
 #define BUZZER_PIN   25
