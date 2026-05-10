@@ -44,6 +44,18 @@ db = SQLAlchemy(app)
 esp32_command = {"command": None, "fingerprint_id": None}
 esp32_lock    = threading.Lock()
 
+# ─── ESP32 API key ─────────────────────────────────────────────────────────────
+ESP32_API_KEY = os.environ.get("ESP32_API_KEY", "your-secret-api-key-here")
+
+def esp32_auth(f):
+    """Decorator that validates the X-API-Key header on ESP32-facing endpoints."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if request.headers.get("X-API-Key") != ESP32_API_KEY:
+            return jsonify({"error": "unauthorized"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Models
@@ -489,6 +501,7 @@ def student_dashboard():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/mark-attendance", methods=["POST"])
+@esp32_auth
 def api_mark_attendance():
     data       = request.get_json(force=True)
     fp_id      = data.get("fingerprint_id")
@@ -512,6 +525,7 @@ def api_mark_attendance():
 
 
 @app.route("/api/esp32/command", methods=["GET"])
+@esp32_auth
 def api_esp32_command():
     with esp32_lock:
         cmd   = esp32_command["command"]
@@ -524,6 +538,7 @@ def api_esp32_command():
 
 
 @app.route("/api/esp32/enroll-result", methods=["POST"])
+@esp32_auth
 def api_enroll_result():
     data    = request.get_json(force=True)
     fp_id   = data.get("fingerprint_id")
